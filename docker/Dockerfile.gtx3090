@@ -39,16 +39,17 @@ ENV PATH="${PATH}:/usr/local/nvidia/bin" \
 RUN apt-get update && apt-get install -y --no-install-recommends wget software-properties-common \
     && add-apt-repository ppa:deadsnakes/ppa -y \
     && apt-get update && apt-get install -y --no-install-recommends \
-    python3.11-full \
-    python3.11-dev \
+    python3.12-full \
+    python3.12-dev \
     python3.10-venv \
-    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 2 \
-    && update-alternatives --set python3 /usr/bin/python3.11 \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 2 \
+    && update-alternatives --set python3 /usr/bin/python3.12 \
     && wget -q https://bootstrap.pypa.io/get-pip.py \
     && python3 get-pip.py --break-system-packages \
     && rm get-pip.py \
     && python3 -m pip config set global.break-system-packages true \
-    && ln -sf /usr/bin/python3.11 /usr/bin/python \
+    && ln -sf /usr/bin/python3.12 /usr/bin/python \
     && rm -rf /var/lib/apt/lists/*
 
 # Install system dependencies
@@ -158,11 +159,11 @@ RUN if [ "$USE_LATEST_SGLANG" = "1" ]; then \
 RUN python3 -m pip install --upgrade pip setuptools wheel html5lib six \
     && cd sglang \
     && case "$CUDA_VERSION" in \
-        12.2|12.2.0) CUINDEX=122 ;; \
         12.4|12.4.0|12.4.1) CUINDEX=124 ;; \
+        12.2|12.2.0) CUINDEX=122 ;; \
         *) echo "CUDA $CUDA_VERSION not explicitly supported, trying cu124"; CUINDEX=124 ;; \
     esac \
-    && python3 -m pip install https://github.com/sgl-project/whl/releases/download/v${SGL_KERNEL_VERSION}/sgl_kernel-${SGL_KERNEL_VERSION}+cu124-cp311-cp311-manylinux2014_$(uname -m).whl --force-reinstall --no-deps \
+    && python3 -m pip install https://github.com/sgl-project/whl/releases/download/v${SGL_KERNEL_VERSION}/sgl_kernel-${SGL_KERNEL_VERSION}+cu124-cp312-cp312-manylinux2014_$(uname -m).whl --force-reinstall --no-deps \
     && python3 -m pip install -e "python[${BUILD_TYPE}]" --extra-index-url https://download.pytorch.org/whl/cu${CUINDEX} \
     && FLASHINFER_CUBIN_DOWNLOAD_THREADS=${BUILD_AND_DOWNLOAD_PARALLEL} FLASHINFER_LOGGING_LEVEL=warning python3 -m flashinfer --download-cubin
 
@@ -237,8 +238,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
     && add-apt-repository ppa:deadsnakes/ppa -y \
     && apt-get update && apt-get install -y --no-install-recommends --allow-change-held-packages \
-    python3.11-full \
-    python3.11-dev \
+    python3.12-full \
+    python3.12-dev \
     wget \
     ca-certificates \
     netcat-openbsd \
@@ -259,9 +260,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ninja-build \
     libnccl2 \
     libnccl-dev \
-    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 2 \
-    && update-alternatives --set python3 /usr/bin/python3.11 \
-    && ln -sf /usr/bin/python3.11 /usr/bin/python \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 2 \
+    && update-alternatives --set python3 /usr/bin/python3.12 \
+    && ln -sf /usr/bin/python3.12 /usr/bin/python \
     && wget -q https://bootstrap.pypa.io/get-pip.py \
     && python3 get-pip.py --break-system-packages \
     && rm get-pip.py \
@@ -278,7 +279,7 @@ ENV LANG=en_US.UTF-8 \
     LC_ALL=en_US.UTF-8
 
 # Copy Python site-packages from framework
-COPY --from=framework /usr/local/lib/python3.11/dist-packages /usr/local/lib/python3.11/dist-packages
+COPY --from=framework /usr/local/lib/python3.12/dist-packages /usr/local/lib/python3.12/dist-packages
 
 # Copy SGLang workspace
 COPY --from=framework /sgl-workspace /sgl-workspace
