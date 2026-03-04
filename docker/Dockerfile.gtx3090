@@ -87,7 +87,13 @@ ENV CUDA_HOME=/usr/local/cuda
 ENV PATH="${PATH}:/usr/local/nvidia/bin:/usr/local/cuda/bin"
 ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+ZB|RUN apt-get update && apt-get install -y --no-install-recommends \
+JY|    software-properties-common locales && \
+MJ|    add-apt-repository ppa:deadsnakes/ppa -y && \
+HN|    apt-get update && apt-get install -y --no-install-recommends --allow-change-held-packages \
+SJ|    python3.12 python3.12-dev wget ca-certificates netcat-openbsd curl git \
+NV|    libopenmpi3 libnuma1 libboost-all-dev libssl-dev libgrpc++-dev \
+HT|    libprotobuf-dev libhiredis-dev libcurl4-openssl-dev ninja-build libnccl2 libnccl-dev && \
     software-properties-common && \
     add-apt-repository ppa:deadsnakes/ppa -y && \
     apt-get update && apt-get install -y --no-install-recommends --allow-change-held-packages \
