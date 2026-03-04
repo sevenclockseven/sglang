@@ -1,0 +1,324 @@
+# SGLang Dockerfile for CentOS 7.9 Host with GTX 3090 (CUDA 12.2 + Driver 535)
+#
+# Build args:
+#   --build-arg SGL_VERSION=latest  # SGLang版本，如 v0.5.0
+#   --build-arg BUILD_TYPE=astral    # 构建类型: all, astral, falcon, gptq, awq, fp8
+#
+# Build example:
+#   docker build --build-arg SGL_VERSION=v0.5.0 -t sglang:gtx3090-cuda12.2 -f Dockerfile .
+#
+# Or build latest:
+#   docker build --build-arg USE_LATEST_SGLANG=1 -t sglang:latest -f Dockerfile .
+
+ARG CUDA_VERSION=12.2
+FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04 AS base
+
+# Build arguments
+ARG TARGETARCH
+ARG BUILD_TYPE=all
+ARG BRANCH_TYPE=remote
+ARG SGL_VERSION
+ARG USE_LATEST_SGLANG=0
+ARG GDRCOPY_VERSION=2.5.1
+ARG PIP_DEFAULT_INDEX
+
+# SGLang kernel version (匹配CUDA 12.2)
+ARG SGL_KERNEL_VERSION=0.3.21
+
+# DeepEP commit for Ampere (GTX 3090)
+ARG DEEPEP_COMMIT=9af0e0d0e74f3577af1979c9b9e1ac2cad0104ee
+
+# Build parallelism
+ARG BUILD_AND_DOWNLOAD_PARALLEL=8
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    CUDA_HOME=/usr/local/cuda \
+    GDRCOPY_HOME=/usr/src/gdrdrv-${GDRCOPY_VERSION}/
+
+ENV PATH="${PATH}:/usr/local/nvidia/bin" \
+    LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
+
+# ============================================================
+# Base Stage: Ubuntu 22.04 with CUDA 12.2
+# ============================================================
+
+# Python setup
+RUN apt-get update && apt-get install -y --no-install-recommends wget software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa -y \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    python3.11-full \
+    python3.11-dev \
+    python3.10-venv \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 2 \
+    && update-alternatives --set python3 /usr/bin/python3.11 \
+    && wget -q https://bootstrap.pypa.io/get-pip.py \
+    && python3 get-pip.py --break-system-packages \
+    && rm get-pip.py \
+    && python3 -m pip config set global.break-system-packages true \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Core utilities
+    ca-certificates \
+    software-properties-common \
+    netcat-openbsd \
+    kmod \
+    unzip \
+    openssh-server \
+    curl \
+    wget \
+    lsof \
+    locales \
+    # Build essentials
+    build-essential \
+    cmake \
+    perl \
+    patchelf \
+    ccache \
+    git-lfs \
+    git \
+    # MPI and NUMA
+    libopenmpi-dev \
+    libopenmpi3 \
+    libnuma1 \
+    libnuma-dev \
+    numactl \
+    # Multimodal
+    ffmpeg \
+    # Development libraries
+    libgoogle-glog-dev \
+    libgtest-dev \
+    libjsoncpp-dev \
+    libunwind-dev \
+    libboost-all-dev \
+    libssl-dev \
+    libgrpc-dev \
+    libgrpc++-dev \
+    libprotobuf-dev \
+    protobuf-compiler \
+    protobuf-compiler-grpc \
+    pybind11-dev \
+    libhiredis-dev \
+    libcurl4-openssl-dev \
+    libczmq4 \
+    libczmq-dev \
+    # Package building
+    devscripts \
+    debhelper \
+    fakeroot \
+    dkms \
+    check \
+    libsubunit0 \
+    libsubunit-dev \
+    # Development tools
+    vim \
+    tmux \
+    htop \
+    tree \
+    && rm -rf /var/lib/apt/lists/*
+
+# Replace pip index if specified
+RUN if [ -n "${PIP_DEFAULT_INDEX}" ]; then \
+    python3 -m pip config set global.index-url ${PIP_DEFAULT_INDEX}; \
+    fi
+
+# GDRCopy installation
+RUN mkdir -p /tmp/gdrcopy && cd /tmp \
+    && curl --retry 3 --retry-delay 2 -fsSL -o v${GDRCOPY_VERSION}.tar.gz \
+        https://github.com/NVIDIA/gdrcopy/archive/refs/tags/v${GDRCOPY_VERSION}.tar.gz \
+    && tar -xzf v${GDRCOPY_VERSION}.tar.gz && rm v${GDRCOPY_VERSION}.tar.gz \
+    && cd gdrcopy-${GDRCOPY_VERSION}/packages \
+    && CUDA=/usr/local/cuda ./build-deb-packages.sh \
+    && dpkg -i gdrdrv-dkms_*.deb libgdrapi_*.deb gdrcopy-tests_*.deb gdrcopy_*.deb \
+    && cd / && rm -rf /tmp/gdrcopy
+
+# Fix DeepEP IBGDA symlink
+RUN ln -sf /usr/lib/$(uname -m)-linux-gnu/libmlx5.so.1 /usr/lib/$(uname -m)-linux-gnu/libmlx5.so
+
+# Set locale
+RUN locale-gen en_US.UTF-8
+ENV LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8
+
+# ============================================================
+# Framework Stage: Install SGLang and dependencies
+# ============================================================
+
+FROM base AS framework
+
+ARG BUILD_TYPE
+ARG CUDA_VERSION
+ARG BUILD_AND_DOWNLOAD_PARALLEL
+ARG SGL_KERNEL_VERSION
+ARG SGL_VERSION
+ARG USE_LATEST_SGLANG
+ARG DEEPEP_COMMIT
+ARG BRANCH_TYPE
+
+WORKDIR /sgl-workspace
+
+# Copy local source if building from local
+FROM scratch AS local_src
+COPY . /src
+
+# Install SGLang
+COPY --from=local_src /src /tmp/local_src
+
+RUN if [ "$BRANCH_TYPE" = "local" ]; then \
+        cp -r /tmp/local_src /sgl-workspace/sglang; \
+    elif [ "$USE_LATEST_SGLANG" = "1" ]; then \
+        git clone --depth=1 https://github.com/sgl-project/sglang.git /sgl-workspace/sglang; \
+    elif [ -z "$SGL_VERSION" ]; then \
+        echo "ERROR: SGL_VERSION must be set when USE_LATEST_SGLANG=0 and BRANCH_TYPE!=local" && exit 1; \
+    else \
+        git clone --depth=1 --branch v${SGL_VERSION} https://github.com/sgl-project/sglang.git /sgl-workspace/sglang; \
+    fi \
+    && rm -rf /tmp/local_src
+
+# Install SGLang and dependencies
+RUN python3 -m pip install --upgrade pip setuptools wheel html5lib six \
+    && cd sglang \
+    && case "$CUDA_VERSION" in \
+        12.2) CUINDEX=122 ;; \
+        12.4) CUINDEX=124 ;; \
+        *) echo "CUDA $CUDA_VERSION not explicitly supported, trying cu122"; CUINDEX=122 ;; \
+    esac \
+    && python3 -m pip install https://github.com/sgl-project/whl/releases/download/v${SGL_KERNEL_VERSION}/sgl_kernel-${SGL_KERNEL_VERSION}+cu122-cp311-cp311-manylinux2014_$(uname -m).whl --force-reinstall --no-deps \
+    && python3 -m pip install -e "python[${BUILD_TYPE}]" --extra-index-url https://download.pytorch.org/whl/cu${CUINDEX} \
+    && FLASHINFER_CUBIN_DOWNLOAD_THREADS=${BUILD_AND_DOWNLOAD_PARALLEL} FLASHINFER_LOGGING_LEVEL=warning python3 -m flashinfer --download-cubin
+
+# Install DeepEP for Ampere (GTX 3090 = sm_86)
+RUN curl --retry 3 --retry-delay 2 -fsSL -o ${DEEPEP_COMMIT}.zip \
+        https://github.com/deepseek-ai/DeepEP/archive/${DEEPEP_COMMIT}.zip \
+    && unzip -q ${DEEPEP_COMMIT}.zip && rm ${DEEPEP_COMMIT}.zip \
+    && mv DeepEP-${DEEPEP_COMMIT} DeepEP && cd DeepEP \
+    && sed -i 's/#define NUM_CPU_TIMEOUT_SECS 100/#define NUM_CPU_TIMEOUT_SECS 1000/' csrc/kernels/configs.cuh \
+    && sed -i 's/#define NUM_TIMEOUT_CYCLES 200000000000ull/#define NUM_TIMEOUT_CYCLES 2000000000000ull/' csrc/kernels/configs.cuh \
+    && cd .. \
+    && TORCH_CUDA_ARCH_LIST='8.6;8.9;9.0' MAX_JOBS=${BUILD_AND_DOWNLOAD_PARALLEL} pip install --no-build-isolation -C nvcc.cubin-archs="Ampere" .
+
+# Install essential Python packages
+RUN python3 -m pip install \
+    datamodel_code_generator \
+    pre-commit \
+    pytest \
+    black \
+    isort \
+    icdiff \
+    uv \
+    wheel \
+    scikit-build-core \
+    nixl \
+    py-spy \
+    google-cloud-storage
+
+# Install development tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ninja-build \
+    gdb \
+    less \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python development packages
+RUN python3 -m pip install --break-system-packages \
+    pytest \
+    black \
+    isort \
+    icdiff \
+    scikit-build-core \
+    uv \
+    pre-commit \
+    pandas \
+    matplotlib \
+    tabulate
+
+# Upgrade urllib3
+RUN python3 -m pip install --upgrade "urllib3>=2.6.3"
+
+WORKDIR /sgl-workspace/sglang
+
+# ============================================================
+# Runtime Stage: Production-ready image
+# ============================================================
+
+FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04 AS runtime
+
+ARG CUDA_VERSION
+ARG GDRCOPY_VERSION=2.5.1
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    CUDA_HOME=/usr/local/cuda \
+    GDRCOPY_HOME=/usr/src/gdrdrv-${GDRCOPY_VERSION}/
+
+ENV PATH="${PATH}:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/cuda/nvvm/bin" \
+    LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa -y \
+    && apt-get update && apt-get install -y --no-install-recommends --allow-change-held-packages \
+    python3.11-full \
+    python3.11-dev \
+    wget \
+    # Core utilities
+    ca-certificates \
+    netcat-openbsd \
+    curl \
+    git \
+    # Runtime libraries
+    libopenmpi3 \
+    libnuma1 \
+    libgoogle-glog0v6 \
+    libunwind8 \
+    libboost-system1.74.0 \
+    libboost-thread1.74.0 \
+    libboost-filesystem1.74.0 \
+    libgrpc++1.48t64 \
+    libprotobuf32t64 \
+    libhiredis0.14 \
+    libcurl4 \
+    libssl3 \
+    # Build tools for JIT
+    ninja-build \
+    # NCCL
+    libnccl2 \
+    libnccl-dev \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 2 \
+    && update-alternatives --set python3 /usr/bin/python3.11 \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python \
+    && wget -q https://bootstrap.pypa.io/get-pip.py \
+    && python3 get-pip.py --break-system-packages \
+    && rm get-pip.py \
+    && python3 -m pip config set global.break-system-packages true \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set locale
+RUN apt-get update && apt-get install -y --no-install-recommends locales \
+    && locale-gen en_US.UTF-8 \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8
+
+# Copy Python site-packages from framework
+COPY --from=framework /usr/local/lib/python3.11/dist-packages /usr/local/lib/python3.11/dist-packages
+
+# Copy SGLang workspace
+COPY --from=framework /sgl-workspace /sgl-workspace
+
+# Copy GDRCopy runtime
+COPY --from=framework /usr/lib/libgdrapi.so* /usr/lib/
+COPY --from=framework /usr/bin/gdrcopy_* /usr/bin/
+COPY --from=framework /usr/src/gdrdrv-2.5.1 /usr/src/gdrdrv-2.5.1
+
+# Fix DeepEP symlink
+RUN ln -sf /usr/lib/$(uname -m)-linux-gnu/libmlx5.so.1 /usr/lib/$(uname -m)-linux-gnu/libmlx5.so
+
+WORKDIR /sgl-workspace/sglang
+
+CMD ["/bin/bash"]
