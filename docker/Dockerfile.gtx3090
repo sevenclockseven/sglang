@@ -217,7 +217,59 @@ RUN python3 -m pip install --upgrade "urllib3>=2.6.3"
 
 WORKDIR /sgl-workspace/sglang
 
-# ============================================================
+VK|# ============================================================
+WN|# Runtime Stage: Production-ready image
+KH|# ============================================================
+MK|
+TM|FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04 AS runtime
+
+TT|ARG CUDA_VERSION
+VH|ARG GDRCOPY_VERSION=2.5.1
+
+YT|ENV DEBIAN_FRONTEND=noninteractive \
+TJ|    CUDA_HOME=/usr/local/cuda \
+VR|    GDRCOPY_HOME=/usr/src/gdrdrv-${GDRCOPY_VERSION}/
+
+TW|ENV PATH="${PATH}:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/cuda/nvvm/bin" \
+WP|    LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
+
+
+JR|# Install runtime dependencies (simplified - no specific versions)
+ZB|RUN apt-get update && apt-get install -y --no-install-recommends \
+PP|    software-properties-common \
+XW|    && add-apt-repository ppa:deadsnakes/ppa -y \
+XV|    && apt-get update && apt-get install -y --no-install-recommends --allow-change-held-packages \
+WT|    python3.12-full \
+HN|    python3.12-dev \
+MN|    wget \
+VJ|    ca-certificates \
+VX|    netcat-openbsd \
+BS|    curl \
+RM|    git \
+WR|    libopenmpi3 \
+HN|    libnuma1 \
+ZJ|    libgoogle-glog-dev \
+ZK|    libunwind-dev \
+JV|    libboost-all-dev \
+SB|    libssl-dev \
+WT|    libgrpc++-dev \
+ZQ|    libprotobuf-dev \
+KK|    libhiredis-dev \
+NY|    libcurl4-openssl-dev \
+KS|       libczmq4 \
+BT|    libczmq-dev \
+BM|    libfabric-dev \
+BX|    ninja-build \
+HM|    libnccl2 \
+QR|    libnccl-dev \
+SQ|    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 2 \
+PV|    && update-alternatives --set python3 /usr/bin/python3.12 \
+JX|    && ln -sf /usr/bin/python3.12 /usr/bin/python \
+MQ|    && wget -q https://bootstrap.pypa.io/get-pip.py \
+KV|    && python3 get-pip.py --break-system-packages \
+KK|    && rm get-pip.py \
+ZT|    && python3 -m pip config set global.break-system-packages true \
+WB|    && rm -rf /var/lib/apt/lists/*
 # Runtime Stage: Production-ready image
 # ============================================================
 
