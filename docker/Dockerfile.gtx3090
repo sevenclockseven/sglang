@@ -1,4 +1,4 @@
-# SGLang Dockerfile for CentOS 7.9 Host with GTX 3090 (CUDA 12.4.1 + Driver 535)
+# SGLang Dockerfile for GTX 3090 (CUDA 12.4.1 + Driver 535)
 
 ARG CUDA_VERSION=12.4.1
 FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04 AS base
@@ -6,19 +6,16 @@ FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04 AS base
 ARG BUILD_TYPE=all
 ARG SGL_VERSION
 ARG USE_LATEST_SGLANG=0
-ARG GDRCOPY_VERSION=2.5.1
 ARG SGL_KERNEL_VERSION=0.3.21
 ARG DEEPEP_COMMIT=9af0e0d0e74f3577af1979c9b9e1ac2cad0104ee
 ARG BUILD_AND_DOWNLOAD_PARALLEL=8
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CUDA_HOME=/usr/local/cuda
-ENV PATH="${PATH}:/usr/local/nvidia/bin"
-ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
 
 # Base Stage
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget software-properties-common && \
+    wget software-properties-common locales && \
     add-apt-repository ppa:deadsnakes/ppa -y && \
     apt-get update && apt-get install -y --no-install-recommends \
     python3.12 python3.12-dev python3.10-venv && \
@@ -33,12 +30,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/*
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates locales build-essential cmake perl patchelf ccache git git-lfs \
+    ca-certificates build-essential cmake perl patchelf ccache git git-lfs \
     libopenmpi-dev libopenmpi3 libnuma1 libnuma-dev numactl ffmpeg \
     libgoogle-glog-dev libgtest-dev libjsoncpp-dev libunwind-dev \
     libboost-all-dev libssl-dev libgrpc-dev libgrpc++-dev \
-    libprotobuf-dev protobuf-compiler protobuf-compiler-grpc \
-    pybind11-dev libhiredis-dev libcurl4-openssl-dev libczmq4 libczmq-dev \
+    libprotobuf-dev protobuf-compiler pybind11-dev \
+    libhiredis-dev libcurl4-openssl-dev libczmq4 libczmq-dev \
     vim tmux htop tree && \
     rm -rf /var/lib/apt/lists/*
 
@@ -58,20 +55,19 @@ RUN if [ "$USE_LATEST_SGLANG" = "1" ]; then \
     echo "ERROR: Either SGL_VERSION or USE_LATEST_SGLANG must be set" && exit 1; \
     fi
 
-RUN python3 -m pip install --upgrade pip setuptools wheel html5lib six && \
+RUN python3 -m pip install --upgrade pip setuptools wheel && \
     cd sglang && \
     python3 -m pip install \
     https://github.com/sgl-project/whl/releases/download/v${SGL_KERNEL_VERSION}/sgl_kernel-${SGL_KERNEL_VERSION}+cu124-cp312-cp312-manylinux2014_$(uname -m).whl \
     --force-reinstall --no-deps && \
     python3 -m pip install -e "python[${BUILD_TYPE}]" --extra-index-url https://download.pytorch.org/whl/cu124 && \
-    FLASHINFER_CUBIN_DOWNLOAD_THREADS=${BUILD_AND_DOWNLOAD_PARALLEL} FLASHINFER_LOGGING_LEVEL=warning python3 -m flashinfer --download-cubin
+    FLASHINFER_CUBIN_DOWNLOAD_THREADS=${BUILD_AND_DOWNLOAD_PARALLEL} python3 -m flashinfer --download-cubin
 
 RUN curl --retry 3 --retry-delay 2 -fsSL -o ${DEEPEP_COMMIT}.zip \
     https://github.com/deepseek-ai/DeepEP/archive/${DEEPEP_COMMIT}.zip && \
     unzip -q ${DEEPEP_COMMIT}.zip && rm ${DEEPEP_COMMIT}.zip && \
     mv DeepEP-${DEEPEP_COMMIT} DeepEP && cd DeepEP && \
     sed -i 's/#define NUM_CPU_TIMEOUT_SECS 100/#define NUM_CPU_TIMEOUT_SECS 1000/' csrc/kernels/configs.cuh && \
-    sed -i 's/#define NUM_TIMEOUT_CYCLES 200000000000ull/#define NUM_TIMEOUT_CYCLES 2000000000000ull/' csrc/kernels/configs.cuh && \
     cd .. && \
     TORCH_CUDA_ARCH_LIST='8.6;8.9;9.0' MAX_JOBS=${BUILD_AND_DOWNLOAD_PARALLEL} pip install --no-build-isolation .
 
@@ -84,17 +80,9 @@ FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04 AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CUDA_HOME=/usr/local/cuda
-ENV PATH="${PATH}:/usr/local/nvidia/bin:/usr/local/cuda/bin"
-ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
 
-ZB|RUN apt-get update && apt-get install -y --no-install-recommends \
-JY|    software-properties-common locales && \
-MJ|    add-apt-repository ppa:deadsnakes/ppa -y && \
-HN|    apt-get update && apt-get install -y --no-install-recommends --allow-change-held-packages \
-SJ|    python3.12 python3.12-dev wget ca-certificates netcat-openbsd curl git \
-NV|    libopenmpi3 libnuma1 libboost-all-dev libssl-dev libgrpc++-dev \
-HT|    libprotobuf-dev libhiredis-dev libcurl4-openssl-dev ninja-build libnccl2 libnccl-dev && \
-    software-properties-common && \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common locales && \
     add-apt-repository ppa:deadsnakes/ppa -y && \
     apt-get update && apt-get install -y --no-install-recommends --allow-change-held-packages \
     python3.12 python3.12-dev wget ca-certificates netcat-openbsd curl git \
