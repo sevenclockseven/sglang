@@ -10,7 +10,7 @@
 # Or build latest:
 #   docker build --build-arg USE_LATEST_SGLANG=1 -t sglang:latest -f Dockerfile.gtx3090 .
 
-ARG CUDA_VERSION=12.2.0
+ARG CUDA_VERSION=12.4.1
 FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04 AS base
 FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04 AS base
 
