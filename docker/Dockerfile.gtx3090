@@ -5,14 +5,13 @@ ARG BUILD_TYPE=all
 ARG SGL_VERSION
 ARG USE_LATEST_SGLANG=0
 ARG SGL_KERNEL_VERSION=0.3.21
-ARG DEEPEP_COMMIT=9af0e0d0e74f3577af1979c9b9e1ac2cad0104ee
 ARG BUILD_AND_DOWNLOAD_PARALLEL=8
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CUDA_HOME=/usr/local/cuda
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget software-properties-common locales && \
+    wget software-properties-common locales curl unzip && \
     add-apt-repository ppa:deadsnakes/ppa -y && \
     apt-get update && apt-get install -y --no-install-recommends \
     python3.12 python3.12-dev python3.10-venv && \
@@ -56,14 +55,6 @@ RUN python3 -m pip install --upgrade pip setuptools wheel && \
     python3 -m pip install sgl-kernel==${SGL_KERNEL_VERSION} && \
     python3 -m pip install -e "python[${BUILD_TYPE}]" --extra-index-url https://download.pytorch.org/whl/cu124 && \
     FLASHINFER_CUBIN_DOWNLOAD_THREADS=${BUILD_AND_DOWNLOAD_PARALLEL} python3 -m flashinfer --download-cubin
-
-RUN curl --retry 3 --retry-delay 2 -fsSL -o ${DEEPEP_COMMIT}.zip \
-    https://github.com/deepseek-ai/DeepEP/archive/${DEEPEP_COMMIT}.zip && \
-    unzip -q ${DEEPEP_COMMIT}.zip && rm ${DEEPEP_COMMIT}.zip && \
-    mv DeepEP-${DEEPEP_COMMIT} DeepEP && cd DeepEP && \
-    sed -i 's/#define NUM_CPU_TIMEOUT_SECS 100/#define NUM_CPU_TIMEOUT_SECS 1000/' csrc/kernels/configs.cuh && \
-    cd .. && \
-    TORCH_CUDA_ARCH_LIST='8.6;8.9;9.0' MAX_JOBS=${BUILD_AND_DOWNLOAD_PARALLEL} pip install --no-build-isolation .
 
 RUN python3 -m pip install pytest black isort icdiff uv pandas matplotlib tabulate
 
