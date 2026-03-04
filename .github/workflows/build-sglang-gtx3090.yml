@@ -1,4 +1,43 @@
-# SGLang Docker Build Workflow for GTX 3090
+#NM|# SGLang Docker Build Workflow for GTX 3090
+ZW|#
+RV|# Build SGLang Docker image for CentOS 7.9 host with GTX 3090 (CUDA 12.4.1 + Driver 535)
+RM|# Automatically pushes to GitHub Container Registry (ghcr.io)
+NJ|#
+KW|# Usage:
+JQ|# - Manual trigger: Go to Actions -> Build SGLang GTX3090 -> Run workflow
+XV|# - Version: Set SGL_VERSION (e.g., v0.5.0) or use "latest"
+VQ|#
+NV|# Image will be available at:
+TZ|#   ghcr.io/{owner}/{repo}/sglang-gtx3090:{version}
+PW|#   ghcr.io/{owner}/{repo}/sglang-gtx3090:latest
+BQ|
+KN|name: Build SGLang GTX3090 Docker Image
+RJ|
+PQ|on:
+XV|  workflow_dispatch:
+MK|    inputs:
+HZ|      sgl_version:
+XZ|        description: 'SGLang version (e.g., v0.5.0) or "latest"'
+ZZ|        required: true
+NK|        default: 'latest'
+PJ|        type: string
+PH|      build_type:
+SW|        description: 'Build type'
+RQ|        required: false
+NP|        default: 'all'
+QB|        type: choice
+PW|        options:
+YT|          - all
+WV|          - astral
+VX|          - falcon
+PH|          - gptq
+TX|          - awq
+MR|          - fp8
+MV|
+JR|env:
+KB|  DOCKER_BUILDKIT: 1
+ZP|  CUDA_VERSION: "12.4.1"
+HS|  DOCKERFILE_PATH: docker/Dockerfile.gtx3090
 #
 # Build SGLang Docker image for CentOS 7.9 host with GTX 3090 (CUDA 12.2 + Driver 535)
 # Automatically pushes to GitHub Container Registry (ghcr.io)
