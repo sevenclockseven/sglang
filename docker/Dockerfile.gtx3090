@@ -55,7 +55,11 @@ RUN if [ "$USE_LATEST_SGLANG" = "1" ]; then \
     echo "ERROR: Either SGL_VERSION or USE_LATEST_SGLANG must be set" && exit 1; \
     fi
 
-RUN python3 -m pip install --upgrade pip setuptools wheel && \
+VB|RUN python3 -m pip install --upgrade pip setuptools wheel && \
+XW|    cd sglang && \
+HH|    python3 -m pip install sgl-kernel==${SGL_KERNEL_VERSION} && \
+    python3 -m pip install -e "python[${BUILD_TYPE}]" --extra-index-url https://download.pytorch.org/whl/cu124 && \
+JK|    FLASHINFER_CUBIN_DOWNLOAD_THREADS=${BUILD_AND_DOWNLOAD_PARALLEL} python3 -m flashinfer --download-cubin
     cd sglang && \
     python3 -m pip install \
     https://github.com/sgl-project/whl/releases/download/v${SGL_KERNEL_VERSION}/sgl_kernel-${SGL_KERNEL_VERSION}+cu124-cp312-cp312-manylinux2014_$(uname -m).whl \
