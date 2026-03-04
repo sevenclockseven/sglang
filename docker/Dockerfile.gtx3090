@@ -5,10 +5,10 @@
 #   --build-arg BUILD_TYPE=astral    # 构建类型: all, astral, falcon, gptq, awq, fp8
 #
 # Build example:
-#   docker build --build-arg SGL_VERSION=v0.5.0 -t sglang:gtx3090-cuda12.2 -f Dockerfile .
+#   docker build --build-arg SGL_VERSION=v0.5.0 -t sglang:gtx3090-cuda12.2 -f Dockerfile.gtx3090 .
 #
 # Or build latest:
-#   docker build --build-arg USE_LATEST_SGLANG=1 -t sglang:latest -f Dockerfile .
+#   docker build --build-arg USE_LATEST_SGLANG=1 -t sglang:latest -f Dockerfile.gtx3090 .
 
 ARG CUDA_VERSION=12.2
 FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04 AS base
@@ -16,19 +16,12 @@ FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04 AS base
 # Build arguments
 ARG TARGETARCH
 ARG BUILD_TYPE=all
-ARG BRANCH_TYPE=remote
 ARG SGL_VERSION
 ARG USE_LATEST_SGLANG=0
 ARG GDRCOPY_VERSION=2.5.1
 ARG PIP_DEFAULT_INDEX
-
-# SGLang kernel version (匹配CUDA 12.2)
 ARG SGL_KERNEL_VERSION=0.3.21
-
-# DeepEP commit for Ampere (GTX 3090)
 ARG DEEPEP_COMMIT=9af0e0d0e74f3577af1979c9b9e1ac2cad0104ee
-
-# Build parallelism
 ARG BUILD_AND_DOWNLOAD_PARALLEL=8
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -60,7 +53,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends wget software-p
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Core utilities
     ca-certificates \
     software-properties-common \
     netcat-openbsd \
@@ -71,7 +63,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     lsof \
     locales \
-    # Build essentials
     build-essential \
     cmake \
     perl \
@@ -79,15 +70,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ccache \
     git-lfs \
     git \
-    # MPI and NUMA
     libopenmpi-dev \
     libopenmpi3 \
     libnuma1 \
     libnuma-dev \
     numactl \
-    # Multimodal
     ffmpeg \
-    # Development libraries
     libgoogle-glog-dev \
     libgtest-dev \
     libjsoncpp-dev \
@@ -104,7 +92,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcurl4-openssl-dev \
     libczmq4 \
     libczmq-dev \
-    # Package building
     devscripts \
     debhelper \
     fakeroot \
@@ -112,7 +99,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     check \
     libsubunit0 \
     libsubunit-dev \
-    # Development tools
     vim \
     tmux \
     htop \
@@ -156,27 +142,17 @@ ARG SGL_KERNEL_VERSION
 ARG SGL_VERSION
 ARG USE_LATEST_SGLANG
 ARG DEEPEP_COMMIT
-ARG BRANCH_TYPE
 
 WORKDIR /sgl-workspace
 
-# Copy local source if building from local
-FROM scratch AS local_src
-COPY . /src
-
-# Install SGLang
-COPY --from=local_src /src /tmp/local_src
-
-RUN if [ "$BRANCH_TYPE" = "local" ]; then \
-        cp -r /tmp/local_src /sgl-workspace/sglang; \
-    elif [ "$USE_LATEST_SGLANG" = "1" ]; then \
+# Install SGLang from GitHub
+RUN if [ "$USE_LATEST_SGLANG" = "1" ]; then \
         git clone --depth=1 https://github.com/sgl-project/sglang.git /sgl-workspace/sglang; \
-    elif [ -z "$SGL_VERSION" ]; then \
-        echo "ERROR: SGL_VERSION must be set when USE_LATEST_SGLANG=0 and BRANCH_TYPE!=local" && exit 1; \
-    else \
+    elif [ -n "$SGL_VERSION" ]; then \
         git clone --depth=1 --branch v${SGL_VERSION} https://github.com/sgl-project/sglang.git /sgl-workspace/sglang; \
-    fi \
-    && rm -rf /tmp/local_src
+    else \
+        echo "ERROR: Either SGL_VERSION or USE_LATEST_SGLANG must be set" && exit 1; \
+    fi
 
 # Install SGLang and dependencies
 RUN python3 -m pip install --upgrade pip setuptools wheel html5lib six \
@@ -264,12 +240,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.11-full \
     python3.11-dev \
     wget \
-    # Core utilities
     ca-certificates \
     netcat-openbsd \
     curl \
     git \
-    # Runtime libraries
     libopenmpi3 \
     libnuma1 \
     libgoogle-glog0v6 \
@@ -282,9 +256,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libhiredis0.14 \
     libcurl4 \
     libssl3 \
-    # Build tools for JIT
     ninja-build \
-    # NCCL
     libnccl2 \
     libnccl-dev \
     && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 2 \
