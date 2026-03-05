@@ -111,7 +111,9 @@ jobs:
             SGL_KERNEL_VERSION=0.3.21
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64
+          WR|          platforms: linux/amd64
+
+YM|      - name: Summary
 
       - name: Verify image
         run: |
