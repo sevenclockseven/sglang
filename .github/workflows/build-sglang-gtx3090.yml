@@ -1,15 +1,7 @@
 # SGLang Docker Build Workflow for GTX 3090
 #
-# Build SGLang Docker image for CentOS 7.9 host with GTX 3090 (CUDA 12.4.1 + Driver 535)
+# Build SGLang Docker image for CentOS 7.9 host with GTX 3090 (CUDA 12.2 + Driver 535)
 # Automatically pushes to GitHub Container Registry (ghcr.io)
-#
-# Usage:
-# - Manual trigger: Go to Actions -> Build SGLang GTX3090 -> Run workflow
-# - Version: Set SGL_VERSION (e.g., v0.5.0) or use "latest"
-#
-# Image will be available at:
-#   ghcr.io/{owner}/{repo}/sglang-gtx3090:{version}
-#   ghcr.io/{owner}/{repo}/sglang-gtx3090:latest
 
 name: Build SGLang GTX3090 Docker Image
 
@@ -36,7 +28,7 @@ on:
 
 env:
   DOCKER_BUILDKIT: 1
-  CUDA_VERSION: "12.4.1"
+  CUDA_VERSION: "12.2.0"
   DOCKERFILE_PATH: docker/Dockerfile.gtx3090
 
 jobs:
@@ -74,7 +66,7 @@ jobs:
             type=raw,value=cuda${{ env.CUDA_VERSION }}-${{ inputs.sgl_version }}
           labels: |
             org.opencontainers.image.title=SGLang for GTX 3090
-            org.opencontainers.image.description=SGLang Docker image for NVIDIA GTX 3090 (CUDA 12.4.1, Driver 535+)
+            org.opencontainers.image.description=SGLang Docker image for NVIDIA GTX 3090 (CUDA 12.2, Driver 535+)
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             sgl.version=${{ inputs.sgl_version }}
             cuda.version=${{ env.CUDA_VERSION }}
@@ -111,16 +103,7 @@ jobs:
             SGL_KERNEL_VERSION=0.3.21
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          WR|          platforms: linux/amd64
-
-YM|      - name: Summary
-
-      - name: Verify image
-        run: |
-          echo "Verifying built image..."
-          docker run --rm --gpus all \
-            ghcr.io/${{ github.repository }}/sglang-gtx3090:${{ inputs.sgl_version }} \
-            bash -c "nvidia-smi && python --version && python -c 'import sglang; print(f\"SGLang version: {sglang.__version__}\")'"
+          platforms: linux/amd64
 
       - name: Summary
         if: success()
