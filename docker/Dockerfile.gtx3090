@@ -1,6 +1,5 @@
-VK|ARG CUDA_VERSION=12.2.0
-XT|FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04 AS base
-FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04 AS base
+ARG CUDA_VERSION=12.2.2
+FROM nvidia/cuda:${CUDA_VERSION}-cudnn8-devel-ubuntu22.04 AS base
 
 ARG BUILD_TYPE=all
 ARG SGL_VERSION
@@ -54,14 +53,14 @@ RUN if [ "$USE_LATEST_SGLANG" = "1" ]; then \
 RUN python3 -m pip install --upgrade pip setuptools wheel && \
     cd sglang && \
     python3 -m pip install sgl-kernel==${SGL_KERNEL_VERSION} && \
-    python3 -m pip install -e "python[${BUILD_TYPE}]" --extra-index-url https://download.pytorch.org/whl/cu124 && \
+    python3 -m pip install -e "python[${BUILD_TYPE}]" --extra-index-url https://download.pytorch.org/whl/cu122 && \
     FLASHINFER_CUBIN_DOWNLOAD_THREADS=${BUILD_AND_DOWNLOAD_PARALLEL} python3 -m flashinfer --download-cubin
 
 RUN python3 -m pip install pytest black isort icdiff uv pandas matplotlib tabulate
 
 WORKDIR /sgl-workspace/sglang
 
-FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu22.04 AS runtime
+FROM nvidia/cuda:${CUDA_VERSION}-cudnn8-devel-ubuntu22.04 AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CUDA_HOME=/usr/local/cuda

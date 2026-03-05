@@ -1,6 +1,6 @@
 # SGLang Docker Build Workflow for GTX 3090
 #
-# Build SGLang Docker image for CentOS 7.9 host with GTX 3090 (CUDA 12.2 + Driver 535)
+# Build SGLang Docker image for CentOS 7.9 host with GTX 3090 (CUDA 12.2.2 + Driver 535)
 # Automatically pushes to GitHub Container Registry (ghcr.io)
 
 name: Build SGLang GTX3090 Docker Image
@@ -28,7 +28,7 @@ on:
 
 env:
   DOCKER_BUILDKIT: 1
-  CUDA_VERSION: "12.2.0"
+  CUDA_VERSION: "12.2.2"
   DOCKERFILE_PATH: docker/Dockerfile.gtx3090
 
 jobs:
@@ -66,7 +66,7 @@ jobs:
             type=raw,value=cuda${{ env.CUDA_VERSION }}-${{ inputs.sgl_version }}
           labels: |
             org.opencontainers.image.title=SGLang for GTX 3090
-            org.opencontainers.image.description=SGLang Docker image for NVIDIA GTX 3090 (CUDA 12.2, Driver 535+)
+            org.opencontainers.image.description=SGLang Docker image for NVIDIA GTX 3090 (CUDA 12.2.2, Driver 535+)
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             sgl.version=${{ inputs.sgl_version }}
             cuda.version=${{ env.CUDA_VERSION }}
