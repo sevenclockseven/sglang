@@ -28,12 +28,12 @@ on:
 
 env:
   DOCKER_BUILDKIT: 1
-  CUDA_VERSION: "12.2.2"
+  CUDA_VERSION: "12.6.1"
   DOCKERFILE_PATH: docker/Dockerfile.gtx3090
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
