@@ -28,7 +28,7 @@ on:
 
 env:
   DOCKER_BUILDKIT: 1
-  CUDA_VERSION: "12.6.1"
+  CUDA_VERSION: "12.8"
   DOCKERFILE_PATH: docker/Dockerfile.gtx3090
 
 jobs:
