@@ -1,4 +1,4 @@
-ARG CUDA_VERSION=12.6.1
+ARG CUDA_VERSION=12.8
 FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu24.04 AS base
 
 ARG TARGETARCH
