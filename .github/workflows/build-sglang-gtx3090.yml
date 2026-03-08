@@ -74,8 +74,6 @@ jobs:
       
   build-and-push:
     name: Build and Push Docker Images
-    needs: check-update
-    if: needs.check-update.outputs.has_update == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
