@@ -7,115 +7,140 @@ name: Build SGLang GTX3090 Docker Image
 
 on:
   workflow_dispatch:
-    inputs:
-      sgl_version:
-        description: 'SGLang version (e.g., v0.5.0) or "latest"'
-        required: true
-        default: 'latest'
-        type: string
-      build_type:
-        description: 'Build type'
-        required: false
-        default: 'all'
-        type: choice
-        options:
-          - all
-          - astral
-          - falcon
-          - gptq
-          - awq
-          - fp8
-
+  
 env:
   DOCKER_BUILDKIT: 1
   CUDA_VERSION: "12.8"
   DOCKERFILE_PATH: docker/Dockerfile.gtx3090
 
+  REGISTRY: ghcr.io
+  IMAGE_NAME: sevenclockseven/sglang
+  UPSTREAM_REPO: lmsysorg/sglang
+
 jobs:
+  check-update:
+    name: Check for Updates
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      has_update: ${{ steps.check.outputs.has_update }}
+      latest_tag: ${{ steps.check.outputs.latest_tag }}
+      release_url: ${{ steps.check.outputs.release_url }}
+    steps:
+      - name: Checkout this repository
+        uses: actions/checkout@v4
+
+      - name: Check upstream repository for updates
+        id: check
+        run: |
+          # 获取上游仓库的最新 release
+          RESPONSE=$(curl -s https://api.github.com/repos/${{ env.UPSTREAM_REPO }}/releases/latest)
+
+          LATEST_TAG=$(echo "$RESPONSE" | grep '"tag_name"' | sed 's/.*": "\(.*\)".*/\1/')
+          RELEASE_URL=$(echo "$RESPONSE" | grep '"html_url"' | sed 's/.*": "\(.*\)".*/\1/')
+
+          echo "Latest release tag: $LATEST_TAG"
+          echo "Release URL: $RELEASE_URL"
+
+          # 保存结果供下一步使用
+          echo "latest_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+
+          # 使用 heredoc 语法处理包含特殊字符的 URL
+          {
+            echo "release_url<<EOF"
+            echo "$RELEASE_URL"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          # 获取上次构建保存的 tag
+          LAST_TAG_FILE=".last-sglangversion"
+          if [ -f "$LAST_TAG_FILE" ]; then
+            LAST_TAG=$(cat "$LAST_TAG_FILE")
+          else
+            LAST_TAG=""
+          fi
+          echo "Last build tag: $LAST_TAG"
+
+          # 比较是否有新版本
+          if [ "$LATEST_TAG" != "$LAST_TAG" ] && [ -n "$LATEST_TAG" ]; then
+            echo "has_update=true" >> "$GITHUB_OUTPUT"
+            echo "检测到新版本: $LAST_TAG -> $LATEST_TAG"
+          else
+            echo "has_update=false" >> "$GITHUB_OUTPUT"
+            echo "当前已是最新版本: $LATEST_TAG"
+          fi
+
+      
   build-and-push:
-    runs-on: ubuntu-24.04
+    name: Build and Push Docker Images
+    needs: check-update
+    if: needs.check-update.outputs.has_update == 'true'
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-
     steps:
-      - name: Checkout repository
+      - name: Checkout upstream repository
         uses: actions/checkout@v4
+        with:
+          repository: ${{ env.UPSTREAM_REPO }}
+          path: upstream
+          token: ${{ secrets.GH_PAT }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to GitHub Container Registry
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
+      - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}/sglang-gtx3090
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha,prefix={{branch}}-
-            type=raw,value=${{ inputs.sgl_version }},enable=${{ inputs.sgl_version != 'latest' }}
-            type=raw,value=latest,enable=${{ inputs.sgl_version == 'latest' }}
-            type=raw,value=cuda${{ env.CUDA_VERSION }}-${{ inputs.sgl_version }}
-          labels: |
-            org.opencontainers.image.title=SGLang for GTX 3090
-            org.opencontainers.image.description=SGLang Docker image for NVIDIA GTX 3090 (CUDA 12.2.2, Driver 535+)
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            sgl.version=${{ inputs.sgl_version }}
-            cuda.version=${{ env.CUDA_VERSION }}
-            gpu.model=GTX 3090
+            type=raw,value=${{ needs.check-update.outputs.latest_tag }}
+            type=raw,value=latest
 
-      - name: Determine SGLang install method
-        id: sgl_config
+      - name: Checkout this repository for Dockerfile
+        uses: actions/checkout@v4
+        with:
+          path: local-repo
+
+      - name: Copy local Dockerfile
         run: |
-          if [ "${{ inputs.sgl_version }}" == "latest" ]; then
-            echo "use_latest=1" >> $GITHUB_OUTPUT
-            echo "sgl_version=" >> $GITHUB_OUTPUT
-          else
-            echo "use_latest=0" >> $GITHUB_OUTPUT
-            echo "sgl_version=${{ inputs.sgl_version }}" >> $GITHUB_OUTPUT
-          fi
+          cp local-repo/docker/Dockerfile.gtx3090 upstream/docker/Dockerfile
+          echo "Dockerfile copied to upstream directory"
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
-          context: .
-          file: ${{ env.DOCKERFILE_PATH }}
+          context: ./upstream
           push: true
-          tags: |
-            ghcr.io/${{ github.repository }}/sglang-gtx3090:${{ inputs.sgl_version }}
-            ghcr.io/${{ github.repository }}/sglang-gtx3090:cuda${{ env.CUDA_VERSION }}-${{ inputs.sgl_version }}
-            ghcr.io/${{ github.repository }}/sglang-gtx3090:latest
+          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            CUDA_VERSION=${{ env.CUDA_VERSION }}
-            USE_LATEST_SGLANG=${{ steps.sgl_config.outputs.use_latest }}
-            SGL_VERSION=${{ steps.sgl_config.outputs.sgl_version }}
-            BUILD_TYPE=${{ inputs.build_type }}
-            BUILD_AND_DOWNLOAD_PARALLEL=8
-            SGL_KERNEL_VERSION=0.3.21
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64
 
-      - name: Summary
-        if: success()
+      - name: Push additional tags
         run: |
-          echo "## Build Successful" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** ghcr.io/${{ github.repository }}/sglang-gtx3090:${{ inputs.sgl_version }}" >> $GITHUB_STEP_SUMMARY
-          echo "**CUDA:** ${{ env.CUDA_VERSION }}" >> $GITHUB_STEP_SUMMARY
-          echo "**SGLang:** ${{ inputs.sgl_version }}" >> $GITHUB_STEP_SUMMARY
+          # Push latest tag
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.check-update.outputs.latest_tag }} 2>/dev/null || true
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.check-update.outputs.latest_tag }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
-      - name: Failure notification
-        if: failure()
+          # Push date tag
+          DATE_TAG=$(date +%Y%m%d)
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.check-update.outputs.latest_tag }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$DATE_TAG
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$DATE_TAG
+
+      - name: Notify
         run: |
-          echo "## Build Failed" >> $GITHUB_STEP_SUMMARY
-          echo "Please check the build logs." >> $GITHUB_STEP_SUMMARY
+          echo "构建完成！"
+          echo "镜像: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.check-update.outputs.latest_tag }}"
+          echo "Release: ${{ needs.check-update.outputs.release_url }}"
