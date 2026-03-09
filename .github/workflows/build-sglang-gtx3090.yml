@@ -3,8 +3,7 @@ name: Build SGLang GTX3090 Docker Image
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 2 * * 1'  # 可选：每周自动构建
+
 
 env:
   REGISTRY: ghcr.io
