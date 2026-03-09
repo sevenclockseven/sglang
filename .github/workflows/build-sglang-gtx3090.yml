@@ -79,7 +79,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            CUDA_VERSION=12.2.2
+            CUDA_VERSION=12.8
             NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
       # 输出结果
